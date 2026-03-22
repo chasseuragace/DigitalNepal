@@ -1,0 +1,186 @@
+
+<style>
+.tab-row { display:flex; gap:8px; margin-bottom:1rem; }
+.tab { padding:6px 16px; border-radius:var(--border-radius-md); border:0.5px solid var(--color-border-secondary); cursor:pointer; font-size:13px; color:var(--color-text-secondary); background:transparent; }
+.tab.active { background:var(--color-background-info); color:var(--color-text-info); border-color:var(--color-border-info); font-weight:500; }
+.panel { display:none; }
+.panel.active { display:block; }
+pre { background:var(--color-background-secondary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-md); padding:1rem; font-family:var(--font-mono); font-size:12px; line-height:1.6; overflow-x:auto; color:var(--color-text-primary); margin:0 0 1rem; }
+.kw { color:var(--color-text-info); }
+.str { color:var(--color-text-success); }
+.cmt { color:var(--color-text-tertiary); font-style:italic; }
+.num { color:var(--color-text-warning); }
+.label { font-size:12px; font-weight:500; color:var(--color-text-secondary); margin:0 0 6px; }
+.risk-row { display:flex; gap:8px; align-items:flex-start; margin-bottom:8px; font-size:13px; }
+.risk-pill { font-size:11px; font-weight:500; padding:2px 8px; border-radius:20px; white-space:nowrap; }
+.r-hi { background:var(--color-background-danger); color:var(--color-text-danger); }
+.r-md { background:var(--color-background-warning); color:var(--color-text-warning); }
+.r-lo { background:var(--color-background-success); color:var(--color-text-success); }
+</style>
+
+<div class="tab-row">
+  <button class="tab active" onclick="show('nid-verify')">NID /verify</button>
+  <button class="tab" onclick="show('nid-kyc')">NID /kyc_basic</button>
+  <button class="tab" onclick="show('nrb-sandbox')">NRB sandbox flow</button>
+  <button class="tab" onclick="show('risks')">Critical risks</button>
+</div>
+
+<div id="nid-verify" class="panel active">
+<p class="label">GET /v1/nid/verify — simplest call, returns only true/false</p>
+<pre><span class="cmt">// Request — app sends NID number, gets back boolean only</span>
+<span class="kw">GET</span> https://api.nid.gov.np/v1/nid/verify
+Authorization: Bearer &lt;oauth2_access_token&gt;
+X-Consent-Token: &lt;citizen_issued_consent_uuid&gt;
+
+{
+  <span class="str">"nid"</span>: <span class="str">"1234-5678-9012"</span>,
+  <span class="str">"purpose"</span>: <span class="str">"account_opening"</span>,
+  <span class="str">"app_id"</span>: <span class="str">"nabil_bank_kyc_prod"</span>
+}
+
+<span class="cmt">// Response — nothing more than what was asked</span>
+{
+  <span class="str">"valid"</span>: <span class="kw">true</span>,
+  <span class="str">"query_id"</span>: <span class="str">"q_8f3a2b1c"</span>,    <span class="cmt">// for audit trail</span>
+  <span class="str">"timestamp"</span>: <span class="str">"2025-03-22T09:14:22Z"</span>,
+  <span class="str">"consent_expiry"</span>: <span class="str">"2025-03-22T09:44:22Z"</span>
+}
+
+<span class="cmt">// Error: no consent token issued</span>
+{
+  <span class="str">"error"</span>: <span class="str">"consent_required"</span>,
+  <span class="str">"consent_url"</span>: <span class="str">"https://consent.nid.gov.np/approve?app=nabil_bank&scope=verify"</span>
+}</pre>
+<p class="label">Citizen consent flow (what happens before this API call works)</p>
+<pre><span class="cmt">// Step 1: App redirects citizen to consent portal</span>
+https://consent.nid.gov.np/approve
+  ?app_id=nabil_bank_kyc_prod
+  &scope=verify
+  &redirect_uri=https://nabilbank.com/kyc/callback
+  &state=csrf_token_here
+
+<span class="cmt">// Step 2: Citizen logs in with NID + OTP, approves scope</span>
+<span class="cmt">// Step 3: NID portal redirects back with consent token</span>
+https://nabilbank.com/kyc/callback
+  ?consent_token=ct_9f2e8d3a1b
+  &state=csrf_token_here
+  &expires_in=<span class="num">1800</span>    <span class="cmt">// 30 minutes</span></pre>
+</div>
+
+<div id="nid-kyc" class="panel">
+<p class="label">POST /v1/nid/kyc_basic — returns demographics, requires higher consent scope</p>
+<pre><span class="cmt">// Request — requires kyc_basic scope consent from citizen</span>
+<span class="kw">POST</span> https://api.nid.gov.np/v1/nid/kyc_basic
+Authorization: Bearer &lt;oauth2_access_token&gt;
+X-Consent-Token: &lt;kyc_basic_scope_consent&gt;
+
+{
+  <span class="str">"nid"</span>: <span class="str">"1234-5678-9012"</span>,
+  <span class="str">"purpose"</span>: <span class="str">"loan_origination"</span>,
+  <span class="str">"app_id"</span>: <span class="str">"nabil_bank_loan_prod"</span>,
+  <span class="str">"fields_requested"</span>: [<span class="str">"full_name"</span>, <span class="str">"dob"</span>, <span class="str">"address"</span>, <span class="str">"gender"</span>]
+}
+
+<span class="cmt">// Response — only returns fields explicitly consented to</span>
+{
+  <span class="str">"query_id"</span>: <span class="str">"q_7c2d9e4f"</span>,
+  <span class="str">"data"</span>: {
+    <span class="str">"full_name"</span>: <span class="str">"Ram Bahadur Thapa"</span>,
+    <span class="str">"dob"</span>: <span class="str">"1988-04-15"</span>,
+    <span class="str">"gender"</span>: <span class="str">"M"</span>,
+    <span class="str">"address"</span>: {
+      <span class="str">"province"</span>: <span class="str">"Bagmati"</span>,
+      <span class="str">"district"</span>: <span class="str">"Kathmandu"</span>,
+      <span class="str">"municipality"</span>: <span class="str">"Kathmandu Metropolitan"</span>,
+      <span class="str">"ward"</span>: <span class="num">12</span>
+    }
+  },
+  <span class="str">"data_freshness"</span>: <span class="str">"2024-11-08"</span>,  <span class="cmt">// when NID was last updated</span>
+  <span class="str">"consent_scope"</span>: <span class="str">"kyc_basic"</span>,
+  <span class="str">"consent_expiry"</span>: <span class="str">"2025-03-22T10:00:00Z"</span>
+}
+
+<span class="cmt">// Fields NOT returned even if requested without consent:</span>
+<span class="cmt">// phone, email, biometric, photo, tax_id, passport_no</span></pre>
+</div>
+
+<div id="nrb-sandbox" class="panel">
+<p class="label">NRB sandbox — company onboarding + payment testing flow</p>
+<pre><span class="cmt">// Step 1: Company registers in sandbox portal</span>
+<span class="kw">POST</span> https://sandbox.nrb.org.np/v1/companies/register
+{
+  <span class="str">"company_name"</span>: <span class="str">"Hamro SaaS Pvt Ltd"</span>,
+  <span class="str">"pan_number"</span>: <span class="str">"600123456"</span>,
+  <span class="str">"nid_of_director"</span>: <span class="str">"1234-5678-9012"</span>,  <span class="cmt">// verified via NID API</span>
+  <span class="str">"requested_tier"</span>: <span class="str">"tier_1"</span>,
+  <span class="str">"business_model"</span>: <span class="str">"saas_export"</span>,
+  <span class="str">"monthly_volume_npr"</span>: <span class="num">500000</span>
+}
+
+<span class="cmt">// Response: instant for Tier 1 (no NRB approval needed)</span>
+{
+  <span class="str">"sandbox_key"</span>: <span class="str">"sk_test_np_8f3c2b..."</span>,
+  <span class="str">"tier"</span>: <span class="str">"tier_1"</span>,
+  <span class="str">"limits"</span>: { <span class="str">"monthly_usd"</span>: <span class="num">0</span>, <span class="str">"test_only"</span>: <span class="kw">true</span> },
+  <span class="str">"stripe_test_account"</span>: <span class="str">"acct_test_np_..."</span>,
+  <span class="str">"wise_test_account"</span>: <span class="str">"wise_test_np_..."</span>
+}
+
+<span class="cmt">// Step 2: Simulate receiving foreign payment (Tier 1 test)</span>
+<span class="kw">POST</span> https://sandbox.nrb.org.np/v1/simulate/inbound
+{
+  <span class="str">"sandbox_key"</span>: <span class="str">"sk_test_np_8f3c2b..."</span>,
+  <span class="str">"amount_usd"</span>: <span class="num">299.00</span>,
+  <span class="str">"currency"</span>: <span class="str">"USD"</span>,
+  <span class="str">"description"</span>: <span class="str">"SaaS subscription - Acme Corp USA"</span>,
+  <span class="str">"stripe_payment_intent"</span>: <span class="str">"pi_test_..."</span>
+}
+
+<span class="cmt">// Response: simulated conversion + compliance check</span>
+{
+  <span class="str">"transaction_id"</span>: <span class="str">"txn_sim_4f8a2c"</span>,
+  <span class="str">"amount_usd"</span>: <span class="num">299.00</span>,
+  <span class="str">"amount_npr"</span>: <span class="num">39866.90</span>,   <span class="cmt">// simulated exchange rate</span>
+  <span class="str">"aml_status"</span>: <span class="str">"clear"</span>,
+  <span class="str">"repatriation_deadline"</span>: <span class="str">"2025-06-20"</span>,
+  <span class="str">"compliance_flags"</span>: []
+}</pre>
+</div>
+
+<div id="risks" class="panel">
+<p class="label">Critical risks — what kills each initiative</p>
+
+<div class="risk-row">
+  <span class="risk-pill r-hi">HIGH</span>
+  <span style="color:var(--color-text-primary)"><strong>NID DB data quality.</strong> ~40% of NID records in Nepal have inconsistent romanization of names, missing ward numbers, or mismatched DOB vs. certificate data. Any API that returns bad data destroys trust fast. Mitigation: Phase 0 audit is not optional.</span>
+</div>
+<div class="risk-row">
+  <span class="risk-pill r-hi">HIGH</span>
+  <span style="color:var(--color-text-primary)"><strong>NRB political resistance.</strong> NRB has historically been conservative on FX liberalization. The sandbox circular needs explicit Cabinet endorsement, not just NRB governor's approval. Without RSP's parliamentary majority actively pushing, this stalls. Timeline impact: +6–12 months.</span>
+</div>
+<div class="risk-row">
+  <span class="risk-pill r-hi">HIGH</span>
+  <span style="color:var(--color-text-primary)"><strong>Procurement capture.</strong> Both systems are ~NPR 80–130M contracts — attractive for inflated tendering. If awarded to politically connected IT firms without technical capacity, both systems ship broken. Mitigation: open-source stack, public code repository, technical evaluation committee with private sector members.</span>
+</div>
+<div class="risk-row">
+  <span class="risk-pill r-md">MED</span>
+  <span style="color:var(--color-text-primary)"><strong>Privacy legislation gap.</strong> Nepal has no comprehensive data protection law. Without it, the consent framework in the NID API has no legal teeth — companies can query without genuine consent and face no penalty. A data protection ordinance should precede Phase 2 of NID API.</span>
+</div>
+<div class="risk-row">
+  <span class="risk-pill r-md">MED</span>
+  <span style="color:var(--color-text-primary)"><strong>Single point of failure.</strong> If the NID API goes down, every KYC-dependent service in Nepal stops. Uptime SLA must be 99.9%+ with hot standby. On Nepal's current NTC infrastructure this requires redundant DC setup — not just redundant servers.</span>
+</div>
+<div class="risk-row">
+  <span class="risk-pill r-lo">LOW</span>
+  <span style="color:var(--color-text-primary)"><strong>Developer adoption.</strong> Nepal has a growing but small dev community (~20K engineers). A sandbox with good docs and active Discord/community support should attract 200–500 pilot integrations in year 1. India's Aadhaar got 1000 integrations in 18 months from a much larger base.</span>
+</div>
+</div>
+
+<script>
+function show(id) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  event.target.classList.add('active');
+}
+</script>
